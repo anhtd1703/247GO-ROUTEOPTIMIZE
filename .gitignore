@@ -1,0 +1,26 @@
+# Agent configurations & rules
+.agent/
+.agents/
+.gemini/
+
+# OSRM Data & Map files
+osrm-data/
+data/
+vector-tiles/
+*.osm.pbf
+*.osrm*
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+env/
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,73 @@
+services:
+  # === 1. OSRM ROUTING ENGINE (High Performance Shortest Path & Distance Matrix) ===
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: ph-osrm
+    volumes:
+      - ./osrm-data:/data:ro
+    ports:
+      - "5000:5000"
+    command: osrm-routed --algorithm mld --max-table-size 2000 /data/thaibinh.osrm
+    restart: unless-stopped
+
+  # === 2. VROOM RAW ENGINE (Direct C++ Vehicle Routing Solver) ===
+  vroom:
+    image: ghcr.io/vroom-project/vroom-docker:latest
+    container_name: ph-vroom
+    volumes:
+      - ./vroom-config/config.yml:/conf/config.yml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - osrm
+    restart: unless-stopped
+
+  # === 3. VROOM 2-PHASE OPTIMIZATION SERVICE (Python FastAPI + Unified Schemas) ===
+  vroom-service:
+    build:
+      context: ./vroom
+      dockerfile: Dockerfile
+    container_name: ph-vroom-service
+    volumes:
+      - ./vroom:/app
+    ports:
+      - "8006:8006"
+    environment:
+      - OSRM_URL=http://osrm:5000
+      - VROOM_URL=http://vroom:3000
+    depends_on:
+      - osrm
+      - vroom
+    restart: unless-stopped
+
+  # === 4. GOOGLE OR-TOOLS ENGINE (Constraint Programming Solver) ===
+  ortools:
+    build:
+      context: ./or_tools
+      dockerfile: Dockerfile
+    container_name: ph-ortools
+    volumes:
+      - ./or_tools:/app
+    ports:
+      - "8008:8008"
+    command: uvicorn ortools_server:app --host 0.0.0.0 --port 8008 --reload
+    environment:
+      - OSRM_URL=http://osrm:5000
+    depends_on:
+      - osrm
+    restart: unless-stopped
+
+  # === 5. NGINX REVERSE PROXY & API GATEWAY ===
+  nginx:
+    image: nginx:alpine
+    container_name: ph-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - osrm
+      - vroom
+      - vroom-service
+      - ortools
+    restart: unless-stopped
