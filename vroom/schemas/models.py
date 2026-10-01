@@ -90,19 +90,16 @@ class PassengerSchema(BaseModel):
     name: str = Field(..., description="Tên hành khách / SĐT / Ghi chú")
     type: str = Field(..., description="'delivery' (Trả từ bến về nhà) hoặc 'pickup' (Đón từ nhà ra bến)")
     amount: int = Field(default=1, ge=1, description="Số lượng ghế cần giữ")
-    district_id: int = Field(default=6, description="Mã huyện: 1..6")
-    district_name: Optional[str] = None
     location: Optional[List[float]] = Field(default=None, description="[lng, lat] nhà khách")
     lng: Optional[float] = None
     lat: Optional[float] = None
-    hub_time: str = Field(default="13:00", description="Giờ bến: Delivery=xe HN đến bến, Pickup=xe đi HN xuất bến")
+    trip_time: str = Field(default="13:00", description="Giờ chuyến xe")
     service_duration_min: int = Field(default=2, description="Thời gian dừng xe đón/trả tại nhà (phút)")
     address: Optional[str] = None
     tw_start: Optional[str] = None
     tw_end: Optional[str] = None
 
     # Hỗ trợ alias lạc hậu
-    district: Optional[int] = None
     hubTime: Optional[str] = None
     service: Optional[int] = None
     twStart: Optional[str] = None
@@ -112,12 +109,6 @@ class PassengerSchema(BaseModel):
     @classmethod
     def normalize_pax(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            # District normalization
-            d_id = data.get("district_id") or data.get("district") or 6
-            data["district_id"] = int(d_id)
-            if "district_name" not in data or not data["district_name"]:
-                data["district_name"] = DISTRICT_NAMES.get(int(d_id), f"Huyện {d_id}")
-
             # Location normalization
             loc = data.get("location")
             lng = data.get("lng")
@@ -138,15 +129,18 @@ class PassengerSchema(BaseModel):
                 svc = data.get("service", 2)
                 data["service_duration_min"] = int(svc // 60) if svc > 15 else int(svc)
 
-            # Hub time & Time windows
-            if "hub_time" not in data and "hubTime" in data:
-                data["hub_time"] = data["hubTime"]
-            elif "hub_time" not in data and "timeInput" in data:
-                data["hub_time"] = data["timeInput"]
-            elif "hub_time" not in data and "time_input" in data:
-                data["hub_time"] = data["time_input"]
-            elif "hub_time" not in data:
-                data["hub_time"] = "15:00" if data["type"] == "pickup" else "13:00"
+            # Trip time & Time windows
+            if "trip_time" not in data:
+                if "hub_time" in data:
+                    data["trip_time"] = data["hub_time"]
+                elif "hubTime" in data:
+                    data["trip_time"] = data["hubTime"]
+                elif "timeInput" in data:
+                    data["trip_time"] = data["timeInput"]
+                elif "time_input" in data:
+                    data["trip_time"] = data["time_input"]
+                else:
+                    data["trip_time"] = "15:00" if data["type"] == "pickup" else "13:00"
 
             if "tw_start" not in data and "twStart" in data:
                 data["tw_start"] = data["twStart"]
@@ -189,10 +183,9 @@ class RouteStepSchema(BaseModel):
     job_id: Optional[int] = None
     name: str
     passenger_type: Optional[Literal["delivery", "pickup"]] = None
-    district_id: Optional[int] = None
-    district_name: Optional[str] = None
     amount: Optional[int] = None
     location: List[float]
+    address: Optional[str] = None
     arrival_sec: int
     arrival_time: str
     departure_sec: Optional[int] = None
@@ -220,7 +213,6 @@ class RouteSchema(BaseModel):
     total_distance_meters: int = 0
     total_duration_seconds: int = 0
     total_duration_minutes: float = 0.0
-    districts_served: List[int] = []
     is_on_time: bool = True
     start_location: Optional[List[float]] = None
     end_location: Optional[List[float]] = None
@@ -247,9 +239,8 @@ class UnassignedPassengerSchema(BaseModel):
     name: str
     type: str
     amount: int
-    district_id: int
-    district_name: Optional[str] = None
     location: Optional[List[float]] = None
+    address: Optional[str] = None
     reason: str
 
     # Alias

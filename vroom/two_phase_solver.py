@@ -594,8 +594,6 @@ async def _solve_two_phase_subproblem(
         )
         final_steps.append(start_step)
 
-        districts_visited = set()
-
         # 2. Job Steps (Pha 1 Delivery trước -> Pha 2 Pickup sau)
         for i, js in enumerate(all_job_steps):
             step_index += 1
@@ -611,9 +609,6 @@ async def _solve_two_phase_subproblem(
 
             p_type = p_obj.type if p_obj else ("delivery" if i < len(p1_jobs) else "pickup")
             p_amount = p_obj.amount if p_obj else 1
-            p_dist_id = p_obj.district_id if p_obj else 6
-            p_dist_name = p_obj.district_name if p_obj else DISTRICT_NAMES.get(p_dist_id, "TP. Thái Bình")
-            districts_visited.add(p_dist_id)
 
             svc_sec = (p_obj.service_duration_min * 60) if p_obj else js.get("service", 120)
             sub_system_service += (svc_sec // 60)
@@ -630,10 +625,9 @@ async def _solve_two_phase_subproblem(
                 job_id=j_id,
                 name=p_obj.name if p_obj else f"Khách #{j_id}",
                 passenger_type=p_type,
-                district_id=p_dist_id,
-                district_name=p_dist_name,
                 amount=p_amount,
                 location=js.get("location", [0.0, 0.0]),
+                address=p_obj.address if p_obj else None,
                 arrival_sec=current_clock,
                 arrival_time=sec_to_time(current_clock),
                 departure_sec=current_clock + svc_sec,
@@ -684,9 +678,6 @@ async def _solve_two_phase_subproblem(
         is_on_time = current_clock <= p2_end_sec
         total_dur_min = round(cum_dur / 60.0, 1)
 
-        corridor_name = " + ".join([DISTRICT_NAMES.get(d, f"Huyện {d}") for d in sorted(districts_visited)]) or "Nội thành Thái Bình"
-        route_is_near = is_near_zone or all(d in [1, 3, 5, 6] for d in districts_visited)
-
         route_model = RouteSchema(
             vehicle_id=v_obj.id,
             vehicle_name=v_obj.name,
@@ -697,7 +688,6 @@ async def _solve_two_phase_subproblem(
             total_distance_meters=cum_dist,
             total_duration_seconds=cum_dur,
             total_duration_minutes=total_dur_min,
-            districts_served=sorted(list(districts_visited)),
             is_on_time=is_on_time,
             start_location=v_start_loc,
             end_location=v_end_loc,
@@ -709,9 +699,6 @@ async def _solve_two_phase_subproblem(
             distance=cum_dist,
             duration=cum_dur,
             cost=cum_dist,
-            corridorName=corridor_name,
-            isNearZone=route_is_near,
-            isFarRoute=not route_is_near,
             targetBusTime=p2_end_str,
             peakLoad=max(r_info["delivery_count"], r_info["pickup_count"])
         )
@@ -852,9 +839,8 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
                 name=p_obj.name,
                 type=p_obj.type,
                 amount=p_obj.amount,
-                district_id=p_obj.district_id,
-                district_name=p_obj.district_name or DISTRICT_NAMES.get(p_obj.district_id, f"Huyện {p_obj.district_id}"),
                 location=p_obj.location,
+                address=p_obj.address,
                 reason=reason,
                 id=p_obj.id,
                 description=p_obj.name
@@ -868,9 +854,8 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
                 name=p.name,
                 type=p.type,
                 amount=p.amount,
-                district_id=p.district_id,
-                district_name=p.district_name or DISTRICT_NAMES.get(p.district_id, f"Huyện {p.district_id}"),
                 location=p.location,
+                address=p.address,
                 reason="Vượt quá tổng sức chứa hoặc không thể phục vụ kịp khung giờ ca chạy",
                 id=p.id,
                 description=p.name

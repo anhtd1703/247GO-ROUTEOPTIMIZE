@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeMap VRP Benchmark Studio — So Sánh 3 Engine (PyVRP 8005 vs VROOM 8006 vs OR-Tools 8008)</title>
+    <meta name="description"
+        content="Hệ thống so sánh và đối chiếu hiệu năng điều phối xe trung chuyển giữa 3 giải pháp tối ưu hàng đầu: PyVRP Hybrid (8005), VROOM (8006) và Google OR-Tools (8008)">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- MapLibre GL -->
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+    <!-- SheetJS / XLSX for Client-side Excel Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #f8fafc;
+            --bg-surface: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f1f5f9;
+            --bg-elevated: #f8fafc;
+
+            --border: #e2e8f0;
+            --border-dark: #cbd5e1;
+            --border-focus: #0284c7;
+
+            --text-main: #0f172a;
+            --text-sub: #334155;
+            --text-muted: #64748b;
+
+            /* Solvers Accent Colors (Light Theme Friendly) */
+            --pyvrp-color: #059669;
+            --pyvrp-bg: #ecfdf5;
+            --pyvrp-border: #a7f3d0;
+
+            --vroom-color: #0284c7;
+            --vroom-bg: #f0f9ff;
+            --vroom-border: #bae6fd;
+
+            --ortools-color: #d97706;
+            --ortools-bg: #fffbeb;
+            --ortools-border: #fde68a;
+
+            --danger: #dc2626;
+            --success: #059669;
+            --warning: #d97706;
+            --radius-sm: 6px;
+            --radius: 10px;
+            --radius-lg: 14px;
+
+            --shadow-subtle: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+            --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.05);
+            --shadow-active: 0 8px 24px rgba(15, 23, 42, 0.12);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Top Header */
+        #header {
+            height: 62px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 30;
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+        }
+
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #0284c7, #0f766e);
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 800;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+        }
+
+        .brand-title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge-sub {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 5px;
+            background: #f1f5f9;
+            color: #0284c7;
+            border: 1px solid var(--border);
+            font-weight: 700;
+        }
+
+        .header-engines {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .engine-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: #f8fafc;
+        }
+
+        .engine-pill.pyvrp {
+            border-color: var(--pyvrp-border);
+            background: var(--pyvrp-bg);
+            color: var(--pyvrp-color);
+        }
+
+        .engine-pill.vroom {
+            border-color: var(--vroom-border);
+            background: var(--vroom-bg);
+            color: var(--vroom-color);
+        }
+
+        .engine-pill.ortools {
+            border-color: var(--ortools-border);
+            background: var(--ortools-bg);
+            color: var(--ortools-color);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-link {
+            text-decoration: none;
+            color: var(--text-sub);
+            font-size: 13px;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: #ffffff;
+            transition: all 0.15s;
+        }
+
+        .btn-link:hover {
+            color: #0284c7;
+            border-color: #0284c7;
+            background: #f0f9ff;
+        }
+
+        /* Main Workspace Layout */
+        #workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Left Control Sidebar */
+        #sidebar {
+            width: 380px;
+            background: var(--bg-surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+
+        .sidebar-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-sub);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* File Upload Box */
+        .upload-dropzone {
+            border: 2px dashed var(--border-dark);
+            border-radius: var(--radius);
+            padding: 16px 12px;
+            text-align: center;
+            cursor: pointer;
+            background: #f8fafc;
+            transition: all 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .upload-dropzone:hover {
+            border-color: #0284c7;
+            background: #f0f9ff;
+        }
+
+        .upload-icon {
+            font-size: 24px;
+            margin-bottom: 4px;
+        }
+
+        .upload-text {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .upload-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        /* Fixed Fleet Info Banner */
+        .fleet-info-card {
+            background: #f1f5f9;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .fleet-info-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .fleet-badge-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .fleet-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: #ffffff;
+            border: 1px solid var(--border-dark);
+            color: var(--text-sub);
+        }
+
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-sub);
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .form-select,
+        .form-input {
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid var(--border-dark);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            font-size: 13px;
+            color: var(--text-main);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .form-select:focus,
+        .form-input:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+        }
+
+        /* Primary Action Button */
+        .btn-run-all {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, #0284c7, #059669);
+            border: none;
+            border-radius: var(--radius);
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-run-all:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(2, 132, 199, 0.45);
+        }
+
+        .btn-run-all:active {
+            transform: translateY(1px);
+        }
+
+        .btn-run-all:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Right Content Area */
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* KPI Comparison Matrix (Top 3 Cards) */
+        #kpi-matrix {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 18px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            position: relative;
+            transition: all 0.2s;
+            cursor: pointer;
+            box-shadow: var(--shadow-card);
+        }
+
+        .kpi-card:hover {
+            border-color: var(--card-accent, #0284c7);
+        }
+
+        .kpi-card.active {
+            border-color: var(--card-accent, #0284c7);
+            background: var(--card-bg, #ffffff);
+            box-shadow: var(--shadow-active);
+        }
+
+        .kpi-card.pyvrp {
+            --card-accent: var(--pyvrp-color);
+            --card-bg: #f7fef9;
+        }
+
+        .kpi-card.vroom {
+            --card-accent: var(--vroom-color);
+            --card-bg: #f8fcff;
+        }
+
+        .kpi-card.ortools {
+            --card-accent: var(--ortools-color);
+            --card-bg: #fffdfa;
+        }
+
+        .kpi-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .kpi-engine-name {
+            font-size: 14px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .kpi-time-badge {
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 5px;
+            background: #f1f5f9;
+            color: var(--text-sub);
+            border: 1px solid var(--border-dark);
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .kpi-item {
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            padding: 6px 8px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+
+        .kpi-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .kpi-val {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-top: 2px;
+        }
+
+        .kpi-val.highlight {
+            color: #0284c7;
+        }
+
+        /* Map and Details Section */
+        #map-and-details {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #map-container {
+            flex: 1;
+            position: relative;
+            background: #e2e8f0;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Map View Engine Toggle Bar */
+        .map-engine-tabs {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            z-index: 15;
+            display: flex;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-dark);
+            border-radius: var(--radius);
+            padding: 4px;
+            gap: 4px;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .map-tab-btn {
+            background: transparent;
+            border: none;
+            padding: 7px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-sub);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .map-tab-btn:hover {
+            background: #f1f5f9;
+        }
+
+        .map-tab-btn.active.pyvrp {
+            background: var(--pyvrp-color);
+            color: #ffffff;
+        }
+
+        .map-tab-btn.active.vroom {
+            background: var(--vroom-color);
+            color: #ffffff;
+        }
+
+        .map-tab-btn.active.ortools {
+            background: var(--ortools-color);
+            color: #ffffff;
+        }
+
+        /* Map Legend */
+        .map-legend {
+            position: absolute;
+            bottom: 20px;
+            left: 14px;
+            z-index: 15;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-dark);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            box-shadow: var(--shadow-subtle);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
+        }
+
+        .legend-line {
+            width: 22px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .legend-line.delivery {
+            background: #0284c7;
+        }
+
+        .legend-line.pickup {
+            background: #dc2626;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
+        }
+
+        .legend-dot.hub {
+            background: #0f172a;
+        }
+
+        /* Right Route Details Panel */
+        #details-panel {
+            width: 440px;
+            background: var(--bg-surface);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .details-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f8fafc;
+        }
+
+        .details-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .vehicle-select-tabs {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            background: #ffffff;
+        }
+
+        .veh-pill {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid var(--border-dark);
+            background: #f8fafc;
+            color: var(--text-sub);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .veh-pill.active {
+            background: #0284c7;
+            color: #ffffff;
+            border-color: #0284c7;
+        }
+
+        .route-steps-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+            background: #f8fafc;
+        }
+
+        /* Timeline Step Item */
+        .step-item {
+            display: flex;
+            gap: 12px;
+            position: relative;
+            padding-bottom: 14px;
+        }
+
+        .step-item:not(:last-child)::before {
+            content: '';
+            position: absolute;
+            top: 24px;
+            left: 13px;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-dark);
+        }
+
+        .step-marker {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid var(--border-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 800;
+            flex-shrink: 0;
+            z-index: 2;
+        }
+
+        .step-marker.start {
+            border-color: #0284c7;
+            color: #0284c7;
+        }
+
+        .step-marker.delivery {
+            border-color: #0284c7;
+            background: #f0f9ff;
+            color: #0284c7;
+        }
+
+        .step-marker.pickup {
+            border-color: #059669;
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        .step-marker.end {
+            border-color: #d97706;
+            color: #d97706;
+        }
+
+        .step-content {
+            flex: 1;
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .step-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+
+        .step-name {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .step-time {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0284c7;
+        }
+
+        .step-addr {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .step-meta {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+            font-size: 10px;
+            color: var(--text-sub);
+        }
+
+        .tag-pill {
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: 700;
+        }
+
+        .tag-pill.deliv {
+            background: #f0f9ff;
+            color: #0284c7;
+            border: 1px solid #bae6fd;
+        }
+
+        .tag-pill.pick {
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+        }
+
+        /* Passenger Overview Table (Bottom Drawer) */
+        .pax-table-summary {
+            font-size: 12px;
+            max-height: 180px;
+            overflow-y: auto;
+            border-top: 1px solid var(--border);
+            background: #ffffff;
+        }
+
+        .table-custom {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-custom th {
+            background: #f1f5f9;
+            padding: 7px 10px;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: left;
+            position: sticky;
+            top: 0;
+            font-weight: 700;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table-custom td {
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-sub);
+        }
+
+        /* Loading Overlay */
+        #loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        #loading-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 4px solid var(--border-dark);
+            border-top-color: #0284c7;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header id="header">
+        <div class="brand-container">
+            <div class="brand-icon">⚡</div>
+            <div class="brand-title">
+                WeMap VRP Benchmark Studio
+                <span class="badge-sub">3-Solver Live Comparison</span>
+            </div>
+        </div>
+
+        <div class="header-engines">
+            <div class="engine-pill pyvrp">
+                <span class="status-dot"></span>
+                PyVRP :8005
+            </div>
+            <div class="engine-pill vroom">
+                <span class="status-dot"></span>
+                VROOM :8006
+            </div>
+            <div class="engine-pill ortools">
+                <span class="status-dot"></span>
+                OR-Tools :8008
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <a href="ortools.html" class="btn-link">⚙️ OR-Tools Solo</a>
+            <a href="vroom.html" class="btn-link">🚀 VROOM Solo</a>
+            <a href="index.html" class="btn-link">🏠 Hub Portal</a>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div id="workspace">
+
+        <!-- Sidebar -->
+        <aside id="sidebar">
+
+            <!-- Data Source Section -->
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span class="section-title">📂 Dữ liệu Ca Trung Chuyển</span>
+                    <span id="pax-count-badge" class="badge-sub mono">0 Khách</span>
+                </div>
+
+                <!-- Dropzone for Excel -->
+                <div class="upload-dropzone" id="dropzone"
+                    onclick="document.getElementById('excel-file-input').click()">
+                    <div class="upload-icon">📊</div>
+                    <div class="upload-text">Kéo thả hoặc Chọn File Excel (.xlsx)</div>
+                    <div class="upload-hint">Tự động +1h45p cho khách Trả & lấy giờ Đón chuẩn</div>
+                </div>
+                <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display: none;">
+
+                <!-- Preset Selector -->
+                <div class="form-group">
+                    <label class="form-label">Hoặc chọn Ca mẫu có sẵn:</label>
+                    <select id="preset-select" class="form-select">
+                        <option value="">-- Chọn ca trung chuyển mẫu --</option>
+                        <option value="Ca_Don_08h_Xa.xlsx">Ca_Don_08h_Xa (5 khách >15km)</option>
+                        <option value="Ca_Don_Tra_07h.xlsx">Ca_Don_Tra_07h (15 khách: 6 Trả, 9 Đón)</option>
+                        <option value="Ca_Don_Tra_11h.xlsx">Ca_Don_Tra_11h (33 khách: 19 Trả, 14 Đón)</option>
+                        <option value="Ca_Don_Tra_15h.xlsx">Ca_Don_Tra_15h (34 khách: 20 Trả, 14 Đón)</option>
+                        <option value="Ca_Tra_20h.xlsx">Ca_Tra_20h (39 khách Trả)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Fixed Fleet Information (No Config Tab) -->
+            <div class="sidebar-section">
+                <div class="fleet-info-card">
+                    <div class="fleet-info-title">
+                        <span>🚗 Cấu hình Đội xe: Cố định 10 xe</span>
+                    </div>
+                    <div class="fleet-badge-row">
+                        <span class="fleet-badge">5 xe 6 chỗ (Xe 01 → 05)</span>
+                        <span class="fleet-badge">2 xe 11 chỗ (Xe 06 → 07)</span>
+                        <span class="fleet-badge">3 xe 15 chỗ (Xe 08 → 10)</span>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                        ⏰ Ca hoạt động: <strong>03:00 → 23:59</strong> (Toàn ngày)
+                    </div>
+                </div>
+
+                <!-- Run Benchmark Button -->
+                <button id="btn-run-benchmark" class="btn-run-all" disabled>
+                    <span>🚀 CHẠY SO SÁNH CẢ 3 ENGINE</span>
+                </button>
+            </div>
+
+            <!-- Loaded Passenger List Preview -->
+            <div class="pax-table-summary">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Loại</th>
+                            <th>Tên / SĐT</th>
+                            <th>Chuyến</th>
+                            <th>Địa chỉ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pax-tbody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">
+                                Chưa có dữ liệu. Vui lòng nạp file Excel.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </aside>
+
+        <!-- Main Content Area -->
+        <main id="main-content">
+
+            <!-- KPI Comparison Matrix -->
+            <section id="kpi-matrix">
+
+                <!-- PyVRP KPI -->
+                <div class="kpi-card pyvrp active" id="card-pyvrp" onclick="switchEngineView('PyVRP')">
+                    <div class="kpi-card-header">
+                        <span class="kpi-engine-name" style="color: var(--pyvrp-color);">
+                            🌱 PyVRP (Port 8005)
+                        </span>
+                        <span class="kpi-time-badge mono" id="pyvrp-time">-- ms</span>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số xe</span>
+                            <span class="kpi-val mono highlight" id="pyvrp-veh">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số Km</span>
+                            <span class="kpi-val mono highlight" id="pyvrp-km">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Thời gian chạy</span>
+                            <span class="kpi-val mono" id="pyvrp-dur">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VROOM KPI -->
+                <div class="kpi-card vroom" id="card-vroom" onclick="switchEngineView('VROOM')">
+                    <div class="kpi-card-header">
+                        <span class="kpi-engine-name" style="color: var(--vroom-color);">
+                            ⚡ VROOM (Port 8006)
+                        </span>
+                        <span class="kpi-time-badge mono" id="vroom-time">-- ms</span>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số xe</span>
+                            <span class="kpi-val mono highlight" id="vroom-veh">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số Km</span>
+                            <span class="kpi-val mono highlight" id="vroom-km">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Thời gian chạy</span>
+                            <span class="kpi-val mono" id="vroom-dur">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OR-Tools KPI -->
+                <div class="kpi-card ortools" id="card-ortools" onclick="switchEngineView('OR-Tools')">
+                    <div class="kpi-card-header">
+                        <span class="kpi-engine-name" style="color: var(--ortools-color);">
+                            🎯 OR-Tools (Port 8008)
+                        </span>
+                        <span class="kpi-time-badge mono" id="ortools-time">-- ms</span>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số xe</span>
+                            <span class="kpi-val mono highlight" id="ortools-veh">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Tổng số Km</span>
+                            <span class="kpi-val mono highlight" id="ortools-km">--</span>
+                        </div>
+                        <div class="kpi-item">
+                            <span class="kpi-label">Thời gian chạy</span>
+                            <span class="kpi-val mono" id="ortools-dur">--</span>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- Map and Details -->
+            <div id="map-and-details">
+
+                <!-- Map Container -->
+                <div id="map-container">
+                    <div class="map-engine-tabs">
+                        <button class="map-tab-btn active pyvrp" id="tab-btn-pyvrp"
+                            onclick="switchEngineView('PyVRP')">PyVRP</button>
+                        <button class="map-tab-btn vroom" id="tab-btn-vroom"
+                            onclick="switchEngineView('VROOM')">VROOM</button>
+                        <button class="map-tab-btn ortools" id="tab-btn-ortools"
+                            onclick="switchEngineView('OR-Tools')">OR-Tools</button>
+                    </div>
+
+                    <!-- Map Legend -->
+                    <div class="map-legend">
+                        <div class="legend-item">
+                            <div class="legend-line delivery"></div>
+                            <span>Đường Trả khách (Delivery)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-line pickup"></div>
+                            <span>Đường Đón khách (Pickup)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot hub"></div>
+                            <span>Bến xe Trung Tâm (Hub QL10)</span>
+                        </div>
+                    </div>
+
+                    <div id="map"></div>
+                </div>
+
+                <!-- Right Route Details Panel -->
+                <aside id="details-panel">
+                    <div class="details-header">
+                        <span class="details-title" id="details-view-title">Lộ Trình: PyVRP</span>
+                        <span id="route-stat-badge" class="badge-sub mono">-- xe | -- km</span>
+                    </div>
+
+                    <div class="vehicle-select-tabs" id="vehicle-tabs">
+                        <div class="veh-pill active">Tất cả xe</div>
+                    </div>
+
+                    <div class="route-steps-scroll" id="steps-timeline">
+                        <div style="text-align: center; color: var(--text-muted); padding: 40px 10px;">
+                            Nhấn <strong>"Chạy So Sánh Cả 3 Engine"</strong> để xem phân tích lộ trình từng xe.
+                        </div>
+                    </div>
+                </aside>
+
+            </div>
+
+            <!-- Loading Overlay -->
+            <div id="loading-overlay">
+                <div class="spinner"></div>
+                <div style="margin-top: 14px; font-weight: 700; color: var(--text-main); font-size: 15px;"
+                    id="loading-text">
+                    Đang giải bài toán trên 3 Engine...
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        const HUB_COORDS = [106.27394632327504, 20.437269083422937];
+        const ENGINES = {
+            PyVRP: { name: 'PyVRP', port: 8005, url: 'http://localhost:8005/api/optimize', color: '#059669' },
+            VROOM: { name: 'VROOM', port: 8006, url: 'http://localhost:8006/api/optimize', color: '#0284c7' },
+            'OR-Tools': { name: 'OR-Tools', port: 8008, url: 'http://localhost:8008/api/optimize', color: '#d97706' }
+        };
+
+
+
+        let currentPassengers = [];
+        let engineResults = {};
+        let currentActiveEngine = 'PyVRP';
+        let currentSelectedVehicle = 'ALL';
+        let map = null;
+        let mapMarkers = [];
+
+        // Khởi tạo MapLibre (Bright Style cho Light Mode)
+        function initMap() {
+            map = new maplibregl.Map({
+                container: 'map',
+                style: 'https://tiles.openfreemap.org/styles/bright',
+                center: [106.335, 20.45],
+                zoom: 10.5
+            });
+
+            map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+            map.on('load', () => {
+                // Thêm Hub marker
+                const el = document.createElement('div');
+                el.style.width = '24px';
+                el.style.height = '24px';
+                el.style.background = '#0f172a';
+                el.style.borderRadius = '50%';
+                el.style.border = '3px solid #ffffff';
+                el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
+                el.style.display = 'flex';
+                el.style.alignItems = 'center';
+                el.style.justifyContent = 'center';
+                el.style.fontSize = '12px';
+                el.innerText = '🏁';
+                el.title = 'Bến xe Thái Bình (QL10)';
+
+                new maplibregl.Marker(el)
+                    .setLngLat(HUB_COORDS)
+                    .setPopup(new maplibregl.Popup().setHTML('<strong>Bến xe Thái Bình (QL10)</strong>'))
+                    .addTo(map);
+            });
+        }
+
+        // Tiện ích tính thời gian: Cộng thêm phút
+        function addMinutesToTime(timeStr, addMins) {
+            if (!timeStr) return '07:00';
+            const str = String(timeStr).trim();
+            const match = str.match(/(\d{1,2}):(\d{2})/);
+            let h = 7, m = 0;
+            if (match) {
+                h = parseInt(match[1]);
+                m = parseInt(match[2]);
+            }
+            let total = h * 60 + m + addMins;
+            if (total < 0) total += 24 * 60;
+            const finalH = Math.floor(total / 60) % 24;
+            const finalM = total % 60;
+            return `${String(finalH).padStart(2, '0')}:${String(finalM).padStart(2, '0')}`;
+        }
+
+
+
+        // Parse tọa độ lat, lng
+        function parseCoord(coordVal) {
+            if (!coordVal) return null;
+            const str = String(coordVal).trim();
+            const match = str.match(/([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)/);
+            if (match) {
+                const lat = parseFloat(match[1]);
+                const lng = parseFloat(match[2]);
+                if (!isNaN(lat) && !isNaN(lng)) return [lng, lat];
+            }
+            return null;
+        }
+
+        // Đọc File Excel bằng SheetJS
+        function handleExcelFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[firstSheetName];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                // Tìm dòng tiêu đề chứa 'Tọa độ'
+                let headerRowIdx = -1;
+                for (let i = 0; i < Math.min(10, rows.length); i++) {
+                    const rowStr = rows[i].map(c => String(c).toLowerCase()).join(' ');
+                    if (rowStr.includes('tọa độ') || rowStr.includes('toa do')) {
+                        headerRowIdx = i;
+                        break;
+                    }
+                }
+
+                if (headerRowIdx === -1) headerRowIdx = 0;
+
+                const headers = rows[headerRowIdx].map(h => String(h || '').trim());
+                const typeCol = headers.findIndex(h => /loại tc/i.test(h));
+                const chuyenCol = headers.findIndex(h => /chuyến/i.test(h));
+                const addrCol = headers.findIndex(h => /địa chỉ/i.test(h));
+                const coordCol = headers.findIndex(h => /tọa độ/i.test(h));
+                const nameCol = headers.findIndex(h => /tên khách/i.test(h));
+                const phoneCol = headers.findIndex(h => /sđt/i.test(h));
+
+                const passengers = [];
+                let pId = 1;
+
+                for (let r = headerRowIdx + 1; r < rows.length; r++) {
+                    const row = rows[r];
+                    if (!row || row.length === 0) continue;
+
+                    const coord = parseCoord(row[coordCol]);
+                    if (!coord) continue;
+
+                    const rawType = String(row[typeCol] || 'Trả').toLowerCase();
+                    const isPickup = rawType.includes('đón') || rawType.includes('don');
+                    const paxType = isPickup ? 'pickup' : 'delivery';
+
+                    const rawChuyen = String(row[chuyenCol] || '07:00:00');
+                    const tripTime = addMinutesToTime(rawChuyen, 0);
+
+                    const addr = row[addrCol] || '';
+                    const name = row[nameCol] ? `${row[nameCol]} (${row[phoneCol] || ''})` : `Khách #${pId}`;
+
+                    passengers.push({
+                        id: pId++,
+                        name: name,
+                        type: paxType,
+                        amount: 1,
+                        location: coord,
+                        trip_time: tripTime,
+                        service_duration_min: 0,
+                        address: String(addr)
+                    });
+                }
+
+                currentPassengers = passengers;
+                renderPassengerTable();
+                document.getElementById('btn-run-benchmark').disabled = passengers.length === 0;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Render bảng danh sách khách
+        function renderPassengerTable() {
+            const tbody = document.getElementById('pax-tbody');
+            document.getElementById('pax-count-badge').innerText = `${currentPassengers.length} Khách`;
+
+            if (currentPassengers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">Chưa có dữ liệu.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = currentPassengers.slice(0, 50).map(p => `
+                <tr>
+                    <td class="mono" style="font-weight: 700;">${p.id}</td>
+                    <td><span class="tag-pill ${p.type === 'delivery' ? 'deliv' : 'pick'}">${p.type === 'delivery' ? 'Trả' : 'Đón'}</span></td>
+                    <td style="font-weight: 700; color: var(--text-main);">${p.name}</td>
+                    <td class="mono" style="color: #0284c7; font-weight: 700;">${p.trip_time}</td>
+                    <td class="truncate" style="max-width: 150px;" title="${p.address}">${p.address}</td>
+                </tr>
+            `).join('');
+
+            if (currentPassengers.length > 50) {
+                tbody.innerHTML += `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); font-size: 11px;">(Đang hiển thị 50 / ${currentPassengers.length} khách)</td></tr>`;
+            }
+        }
+
+        // Sinh đội xe với cùng start_time và end_time áp dụng cho tất cả các xe
+        function buildOptimizationRequest() {
+            const colors = [
+                '#0284c7', '#059669', '#d97706', '#dc2626', '#0891b2',
+                '#2563eb', '#16a34a', '#ca8a04', '#e11d48', '#4b5563'
+            ];
+
+            // Tìm trip_time đại diện của đợt điều xe (ưu tiên từ khách trả, nếu không lấy khách đầu tiên)
+            const deliveryPax = currentPassengers.find(p => p.type === 'delivery');
+            const refTrip = deliveryPax ? deliveryPax.trip_time : (currentPassengers[0]?.trip_time || '07:00');
+
+            // Tính start_time (trip + 110m) và end_time (trip + 240m) áp dụng chung cho tất cả xe
+            const startTime = addMinutesToTime(refTrip, 110);
+            const endTime = addMinutesToTime(refTrip, 240);
+
+            // Đội xe mặc định cho 1 lần điều xe (10 xe: 2 xe 16c, 8 xe 7c)
+            const fleetCapacities = [16, 16, 7, 7, 7, 7, 7, 7, 7, 7];
+            const vehicles = fleetCapacities.map((cap, idx) => {
+                const vId = idx + 1;
+                return {
+                    id: vId,
+                    name: `Xe ${String(vId).padStart(2, '0')} (${cap}c)`,
+                    capacity: cap,
+                    start_time: startTime,
+                    end_time: endTime,
+                    color: colors[idx % colors.length],
+                    start_location: HUB_COORDS,
+                    end_location: HUB_COORDS
+                };
+            });
+
+            if (vehicles.length === 0) {
+                vehicles.push({
+                    id: 1, name: 'Xe Mặc định (16c)', capacity: 16, start_time: startTime, end_time: endTime, color: colors[0], start_location: HUB_COORDS, end_location: HUB_COORDS
+                });
+            }
+
+            return {
+                config: {
+                    time_limit_seconds: 5,
+                    strict_precedence: true,
+                    ride_time_penalty_weight: 2.0
+                },
+                hub: {
+                    name: 'Bến xe Thái Bình (QL10 Vũ Thư)',
+                    location: HUB_COORDS
+                },
+                vehicles: vehicles,
+                passengers: currentPassengers
+            };
+        }
+
+        // Chạy song song Benchmark cả 3 Engine
+        async function runAllBenchmark() {
+            if (currentPassengers.length === 0) return;
+
+            const overlay = document.getElementById('loading-overlay');
+            overlay.classList.add('active');
+
+            const payload = buildOptimizationRequest();
+            engineResults = {};
+
+            const callEngine = async (key) => {
+                const eng = ENGINES[key];
+                const t0 = performance.now();
+                try {
+                    const res = await fetch(eng.url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const elapsed = Math.round(performance.now() - t0);
+                    if (res.ok) {
+                        const json = await res.json();
+                        engineResults[key] = {
+                            success: true,
+                            data: json,
+                            timeMs: json.computation_time_ms || elapsed
+                        };
+                    } else {
+                        engineResults[key] = { success: false, error: `HTTP ${res.status}` };
+                    }
+                } catch (err) {
+                    engineResults[key] = { success: false, error: err.message };
+                }
+            };
+
+            await Promise.allSettled([
+                callEngine('PyVRP'),
+                callEngine('VROOM'),
+                callEngine('OR-Tools')
+            ]);
+
+            overlay.classList.remove('active');
+            updateKPICards();
+            renderRouteDetails(currentActiveEngine);
+        }
+
+        // Cập nhật thẻ KPI
+        function updateKPICards() {
+            const metrics = {
+                PyVRP: { prefix: 'pyvrp', res: engineResults.PyVRP },
+                VROOM: { prefix: 'vroom', res: engineResults.VROOM },
+                'OR-Tools': { prefix: 'ortools', res: engineResults['OR-Tools'] }
+            };
+
+            for (const [key, item] of Object.entries(metrics)) {
+                const p = item.prefix;
+                const r = item.res;
+
+                if (r && r.success && r.data) {
+                    const sum = r.data.summary || {};
+                    const vUsed = sum.total_vehicles_used || (r.data.routes || []).length;
+                    const distKm = sum.total_distance_km || 0;
+                    const durMin = Math.round(sum.total_duration_minutes || 0);
+
+                    document.getElementById(`${p}-time`).innerText = `${r.timeMs} ms`;
+                    document.getElementById(`${p}-veh`).innerText = `${vUsed} / 10 xe`;
+                    document.getElementById(`${p}-km`).innerText = `${distKm.toFixed(1)} km`;
+                    document.getElementById(`${p}-dur`).innerText = `${durMin} phút`;
+                } else {
+                    document.getElementById(`${p}-time`).innerText = 'Lỗi';
+                    document.getElementById(`${p}-veh`).innerText = '--';
+                    document.getElementById(`${p}-km`).innerText = '--';
+                    document.getElementById(`${p}-dur`).innerText = '--';
+                }
+            }
+        }
+
+        // Chuyển chế độ xem Engine
+        function switchEngineView(engineKey) {
+            currentActiveEngine = engineKey;
+
+            // Highlight Cards
+            document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('active'));
+            if (engineKey === 'PyVRP') document.getElementById('card-pyvrp').classList.add('active');
+            if (engineKey === 'VROOM') document.getElementById('card-vroom').classList.add('active');
+            if (engineKey === 'OR-Tools') document.getElementById('card-ortools').classList.add('active');
+
+            // Highlight Tabs
+            document.querySelectorAll('.map-tab-btn').forEach(b => b.classList.remove('active'));
+            if (engineKey === 'PyVRP') document.getElementById('tab-btn-pyvrp').classList.add('active');
+            if (engineKey === 'VROOM') document.getElementById('tab-btn-vroom').classList.add('active');
+            if (engineKey === 'OR-Tools') document.getElementById('tab-btn-ortools').classList.add('active');
+
+            renderRouteDetails(engineKey);
+        }
+
+        // Vẽ Lộ trình và Chi tiết Timeline
+        function renderRouteDetails(engineKey) {
+            document.getElementById('details-view-title').innerText = `Lộ Trình: ${engineKey}`;
+            const res = engineResults[engineKey];
+
+            if (!res || !res.success || !res.data) {
+                document.getElementById('route-stat-badge').innerText = '-- xe | -- km';
+                document.getElementById('steps-timeline').innerHTML = `
+                    <div style="text-align: center; color: var(--text-muted); padding: 40px 10px;">
+                        Chưa có dữ liệu từ ${engineKey}. Nhấn <strong>"Chạy So Sánh Cả 3 Engine"</strong>.
+                    </div>
+                `;
+                clearMapRoutes();
+                return;
+            }
+
+            const data = res.data;
+            const routes = data.routes || [];
+            const sum = data.summary || {};
+            const vUsed = sum.total_vehicles_used || routes.length;
+            const distKm = (sum.total_distance_km || 0).toFixed(1);
+
+            document.getElementById('route-stat-badge').innerText = `Tổng: ${vUsed} xe | ${distKm} km`;
+
+            // Render Vehicle Tabs
+            const vehTabs = document.getElementById('vehicle-tabs');
+            vehTabs.innerHTML = `<div class="veh-pill ${currentSelectedVehicle === 'ALL' ? 'active' : ''}" onclick="selectVehicleTab('ALL')">Tất cả xe (${routes.length})</div>`;
+            routes.forEach(r => {
+                vehTabs.innerHTML += `<div class="veh-pill ${currentSelectedVehicle == r.vehicle_id ? 'active' : ''}" onclick="selectVehicleTab(${r.vehicle_id})">${r.vehicle_name}</div>`;
+            });
+
+            // Render Timeline Steps
+            renderTimelineSteps(routes);
+
+            // Vẽ Map Polylines & Markers
+            drawMapRoutes(routes);
+        }
+
+        function selectVehicleTab(vId) {
+            currentSelectedVehicle = vId;
+            renderRouteDetails(currentActiveEngine);
+        }
+
+        function renderTimelineSteps(routes) {
+            const container = document.getElementById('steps-timeline');
+            let filteredRoutes = routes;
+            if (currentSelectedVehicle !== 'ALL') {
+                filteredRoutes = routes.filter(r => r.vehicle_id == currentSelectedVehicle);
+            }
+
+            if (filteredRoutes.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 30px;">Không có xe hoạt động.</div>`;
+                return;
+            }
+
+            let html = '';
+            filteredRoutes.forEach(route => {
+                const dist = (route.total_distance_meters / 1000).toFixed(1);
+                html += `
+                    <div style="margin-bottom: 18px;">
+                        <div style="font-size: 13px; font-weight: 800; color: #0284c7; margin-bottom: 8px; display: flex; justify-content: space-between;">
+                            <span>🚗 ${route.vehicle_name} (${dist} km)</span>
+                            <span style="color: var(--text-muted); font-size: 11px; font-weight: 600;">
+                                <span style="color: #0284c7;">Trả: ${route.delivery_passengers}</span> | 
+                                <span style="color: #dc2626;">Đón: ${route.pickup_passengers}</span>
+                            </span>
+                        </div>
+                `;
+
+                (route.steps || []).forEach(step => {
+                    const isDelivery = step.passenger_type === 'delivery' || step.phase === 'delivery';
+                    const isPickup = step.passenger_type === 'pickup' || step.phase === 'pickup';
+                    const markerClass = step.type === 'start' ? 'start' : (step.type === 'end' ? 'end' : (isDelivery ? 'delivery' : 'pickup'));
+                    const tagType = isDelivery ? 'deliv' : 'pick';
+
+                    html += `
+                        <div class="step-item">
+                            <div class="step-marker ${markerClass}">
+                                ${step.type === 'start' ? '🏁' : (step.type === 'end' ? '🏠' : step.step_index)}
+                            </div>
+                            <div class="step-content">
+                                <div class="step-top">
+                                    <span class="step-name">${step.name}</span>
+                                    <span class="step-time mono">${step.arrival_time}</span>
+                                </div>
+                                ${step.passenger_type ? `
+                                    <div class="step-meta">
+                                        <span class="tag-pill ${tagType}">${isDelivery ? 'Trả khách' : 'Đón khách'}</span>
+                                        <span class="truncate" style="font-size: 11px; max-width: 140px;" title="${step.address || ''}">${step.address || ''}</span>
+                                        <span>Tải: ${step.current_load ?? '--'} ghế</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function clearMapRoutes() {
+            if (!map) return;
+            mapMarkers.forEach(m => m.remove());
+            mapMarkers = [];
+
+            const layers = map.getStyle().layers || [];
+            layers.forEach(l => {
+                if (l.id && l.id.startsWith('route-layer-')) {
+                    if (map.getLayer(l.id)) map.removeLayer(l.id);
+                    if (map.getSource(l.id)) map.removeSource(l.id);
+                }
+            });
+        }
+
+        // Gọi OSRM Route API để lấy đường vẽ thực tế bám theo đường bộ
+        async function fetchOsrmRoadGeometry(coords) {
+            if (!coords || coords.length < 2) return coords;
+            const coordStr = coords.map(c => `${c[0]},${c[1]}`).join(';');
+
+            // Thử gọi local OSRM :5000 trước
+            try {
+                const res = await fetch(`http://localhost:5000/route/v1/driving/${coordStr}?overview=full&geometries=geojson`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.code === 'Ok' && data.routes && data.routes[0]) {
+                        return data.routes[0].geometry.coordinates;
+                    }
+                }
+            } catch (e) {
+                // Thử fallback qua proxy /route/osrm/
+                try {
+                    const res2 = await fetch(`/route/osrm/route/v1/driving/${coordStr}?overview=full&geometries=geojson`);
+                    if (res2.ok) {
+                        const data2 = await res2.json();
+                        if (data2.code === 'Ok' && data2.routes && data2.routes[0]) {
+                            return data2.routes[0].geometry.coordinates;
+                        }
+                    }
+                } catch (e2) { }
+            }
+            return coords; // fallback nếu không kết nối được OSRM
+        }
+
+        // Vẽ Lộ trình thực tế: Trả khách = Màu Xanh, Đón khách = Màu Đỏ
+        async function drawMapRoutes(routes) {
+            clearMapRoutes();
+            if (!map || routes.length === 0) return;
+
+            let filteredRoutes = routes;
+            if (currentSelectedVehicle !== 'ALL') {
+                filteredRoutes = routes.filter(r => r.vehicle_id == currentSelectedVehicle);
+            }
+
+            const bounds = new maplibregl.LngLatBounds();
+            bounds.extend(HUB_COORDS);
+
+            for (let idx = 0; idx < filteredRoutes.length; idx++) {
+                const route = filteredRoutes[idx];
+                const steps = route.steps || [];
+                if (steps.length < 2) continue;
+
+                const startStep = steps.find(s => s.type === 'start') || { location: HUB_COORDS };
+                const endStep = steps.find(s => s.type === 'end') || { location: HUB_COORDS };
+
+                const deliverySteps = steps.filter(s => s.type === 'job' && (s.passenger_type === 'delivery' || s.phase === 'delivery'));
+                const pickupSteps = steps.filter(s => s.type === 'job' && (s.passenger_type === 'pickup' || s.phase === 'pickup'));
+
+                // 1. CHẶNG TRẢ KHÁCH (DELIVERY) - TÔ MÀU XANH DƯƠNG (#0284c7)
+                if (deliverySteps.length > 0) {
+                    const deliveryPts = [startStep.location, ...deliverySteps.map(s => s.location)];
+                    if (pickupSteps.length === 0) {
+                        deliveryPts.push(endStep.location); // Quay về bến nếu không đón
+                    }
+
+                    const roadGeom = await fetchOsrmRoadGeometry(deliveryPts);
+                    const layerId = `route-layer-delivery-${route.vehicle_id}-${idx}`;
+
+                    map.addSource(layerId, {
+                        type: 'geojson',
+                        data: {
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: roadGeom }
+                        }
+                    });
+
+                    map.addLayer({
+                        id: layerId,
+                        type: 'line',
+                        source: layerId,
+                        layout: { 'line-join': 'round', 'line-cap': 'round' },
+                        paint: {
+                            'line-color': '#0284c7', // MÀU XANH CHO TRẢ KHÁCH
+                            'line-width': 5,
+                            'line-opacity': 0.85
+                        }
+                    });
+
+                    roadGeom.forEach(c => bounds.extend(c));
+                }
+
+                // 2. CHẶNG ĐÓN KHÁCH (PICKUP) - TÔ MÀU ĐỎ (#dc2626)
+                if (pickupSteps.length > 0) {
+                    const startPickupLoc = deliverySteps.length > 0
+                        ? deliverySteps[deliverySteps.length - 1].location
+                        : startStep.location;
+
+                    const pickupPts = [startPickupLoc, ...pickupSteps.map(s => s.location), endStep.location];
+                    const roadGeom = await fetchOsrmRoadGeometry(pickupPts);
+                    const layerId = `route-layer-pickup-${route.vehicle_id}-${idx}`;
+
+                    map.addSource(layerId, {
+                        type: 'geojson',
+                        data: {
+                            type: 'Feature',
+                            geometry: { type: 'LineString', coordinates: roadGeom }
+                        }
+                    });
+
+                    map.addLayer({
+                        id: layerId,
+                        type: 'line',
+                        source: layerId,
+                        layout: { 'line-join': 'round', 'line-cap': 'round' },
+                        paint: {
+                            'line-color': '#dc2626', // MÀU ĐỎ CHO ĐÓN KHÁCH
+                            'line-width': 5,
+                            'line-opacity': 0.85
+                        }
+                    });
+
+                    roadGeom.forEach(c => bounds.extend(c));
+                }
+
+                // 3. THÊM MARKER ĐIỂM DỪNG (XANH = TRẢ, ĐỎ = ĐÓN)
+                steps.forEach(step => {
+                    if (step.type === 'job' && step.location) {
+                        const isDelivery = step.passenger_type === 'delivery' || step.phase === 'delivery';
+                        const el = document.createElement('div');
+                        el.style.width = '16px';
+                        el.style.height = '16px';
+                        el.style.borderRadius = '50%';
+                        el.style.background = isDelivery ? '#0284c7' : '#dc2626'; // XANH CHO TRẢ, ĐỎ CHO ĐÓN
+                        el.style.border = '2px solid #ffffff';
+                        el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.35)';
+
+                        const m = new maplibregl.Marker(el)
+                            .setLngLat(step.location)
+                            .setPopup(new maplibregl.Popup({ offset: 10 }).setHTML(`
+                                <div style="color: #0f172a; font-size: 12px; font-family: sans-serif;">
+                                    <strong>${step.name}</strong><br>
+                                    Hành động: <span style="font-weight: 700; color: ${isDelivery ? '#0284c7' : '#dc2626'};">${isDelivery ? '🔵 Trả khách' : '🔴 Đón khách'}</span><br>
+                                    Giờ đến: <strong>${step.arrival_time}</strong>
+                                </div>
+                            `))
+                            .addTo(map);
+                        mapMarkers.push(m);
+                        bounds.extend(step.location);
+                    }
+                });
+            }
+
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+
+            // Excel Upload
+            document.getElementById('excel-file-input').addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleExcelFile(e.target.files[0]);
+                }
+            });
+
+            // Drag & Drop
+            const dropzone = document.getElementById('dropzone');
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = '#0284c7';
+                dropzone.style.background = '#f0f9ff';
+            });
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.style.borderColor = 'var(--border-dark)';
+                dropzone.style.background = '#f8fafc';
+            });
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = 'var(--border-dark)';
+                dropzone.style.background = '#f8fafc';
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleExcelFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            // Preset Selector
+            document.getElementById('preset-select').addEventListener('change', async (e) => {
+                const val = e.target.value;
+                if (!val) return;
+                try {
+                    const res = await fetch(`/data/ca_trung_chuyen/${val}`);
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        handleExcelFile(blob);
+                    } else {
+                        alert(`Không thể tải file mẫu ${val}`);
+                    }
+                } catch (err) {
+                    alert(`Lỗi tải file: ${err.message}`);
+                }
+            });
+
+            // Run Benchmark Button
+            document.getElementById('btn-run-benchmark').addEventListener('click', () => {
+                runAllBenchmark();
+            });
+        });
+    </script>
+</body>
+
+</html>

@@ -79,15 +79,7 @@ app.add_middleware(
 # Địa chỉ OSRM Engine chạy local (hoặc remote)
 OSRM_URL = os.getenv("OSRM_URL", "http://localhost:5000")
 
-# Bảng cam kết thời gian di chuyển chuẩn (SLA) giữa Bến xe trung tâm (QL10 Vũ Thư) và các huyện (phút)
-DISTRICT_SLA = {
-    1: {"name": "Đông Hưng", "outbound": 30, "inbound": 30},
-    2: {"name": "Tiền Hải", "outbound": 40, "inbound": 40},
-    3: {"name": "Kiến Xương", "outbound": 25, "inbound": 25},
-    4: {"name": "Thái Thụy", "outbound": 45, "inbound": 45},
-    5: {"name": "Vũ Thư", "outbound": 20, "inbound": 20},
-    6: {"name": "TP. Thái Bình", "outbound": 15, "inbound": 15}
-}
+# Xóa bỏ SLA cứng, sử dụng trip_time linh hoạt
 
 # --------------------------------------------------------------------------------------------------
 # CÁC HÀM TIỆN ÍCH TÍNH TOÁN HÌNH HỌC VÀ OSRM
@@ -194,8 +186,6 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
     """
     start_time_ts = time.time()
 
-    start_time_ts = time.time()
-
     if not req.vehicles:
         raise HTTPException(status_code=400, detail="Danh sách xe trung chuyển không được để trống!")
     if not req.passengers:
@@ -251,7 +241,6 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
     for idx, p in enumerate(req.passengers):
         node_idx = idx + 1
         is_delivery = p.type == 'delivery'
-        d_sla = DISTRICT_SLA.get(p.district_id, {"outbound": 30, "inbound": 30})
         service_sec = p.service_duration_min * 60
         service_times[node_idx] = service_sec
 
@@ -265,8 +254,8 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
             delivery_node_indices.append(node_idx)
         else:
             # 2. ĐÓN KHÁCH (Pickup):
-            # Khách cần về bến trước giờ xe lớn đi Hà Nội (p.hub_time)
-            hanoi_dep_sec = time_to_sec(p.hub_time) if p.hub_time else max_v_end
+            # Khách cần về bến trước giờ xe lớn đi Hà Nội (p.trip_time)
+            hanoi_dep_sec = time_to_sec(p.trip_time) if p.trip_time else max_v_end
             direct_dur_to_hub = duration_matrix[node_idx][0]
 
             # Giờ đón muộn nhất để kịp về bến trước giờ xe lớn chạy (đảm bảo min <= max)
@@ -375,7 +364,7 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
     for p_node in pickup_node_indices:
         p_idx = manager.NodeToIndex(p_node)
         pax = req.passengers[p_node - 1]
-        hanoi_dep_sec = time_to_sec(pax.hub_time) if pax.hub_time else max_v_end
+        hanoi_dep_sec = time_to_sec(pax.trip_time) if pax.trip_time else max_v_end
         direct_dur_to_hub = duration_matrix[p_node][0]
         # Mốc đón lý tưởng = Giờ xe lớn chạy - Thời gian chạy thẳng từ nhà ra Bến - 15 phút đệm
         ideal_pickup_sec = max(min_v_start, hanoi_dep_sec - direct_dur_to_hub - 900)
@@ -431,7 +420,7 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
     for p_node in pickup_node_indices:
         p_idx = manager.NodeToIndex(p_node)
         pax = req.passengers[p_node - 1]
-        hanoi_dep_sec = time_to_sec(pax.hub_time) if pax.hub_time else max_v_end
+        hanoi_dep_sec = time_to_sec(pax.trip_time) if pax.trip_time else max_v_end
         
         # Chỉ cần về bến trước giờ xe lớn đi Hà Nội (không cần trước 10 phút, bỏ cận dưới)
         max_hub_arrival_sec = hanoi_dep_sec
@@ -574,7 +563,7 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
         route_coords = [v_start_loc]
         used_del = 0
         used_pick = 0
-        districts_in_route = set()
+        used_pick = 0
 
         start_arrival = solution.Min(time_dimension.CumulVar(start_index))
         steps.append(RouteStepSchema(
@@ -607,7 +596,6 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
 
             assigned_nodes.add(curr_node)
             pax = req.passengers[curr_node - 1]
-            districts_in_route.add(pax.district_id)
             is_del = pax.type == 'delivery'
 
             if is_del:
@@ -627,10 +615,9 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
                 job_id=pax.id,
                 name=pax.name,
                 passenger_type="delivery" if is_del else "pickup",
-                district_id=pax.district_id,
-                district_name=pax.district_name or DISTRICT_NAMES.get(pax.district_id, f"Huyện {pax.district_id}"),
                 amount=pax.amount,
                 location=pax.location,
+                address=pax.address,
                 arrival_sec=arrival_sec,
                 arrival_time=sec_to_time(arrival_sec),
                 departure_sec=dep_sec,
@@ -686,7 +673,6 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
             total_distance_meters=r_dist,
             total_duration_seconds=r_dur,
             total_duration_minutes=round(r_dur / 60.0, 1),
-            districts_served=sorted(list(districts_in_route)),
             is_on_time=True,
             start_location=v_start_loc,
             end_location=v_end_loc,
@@ -704,9 +690,8 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
                 name=p.name,
                 type=p.type,
                 amount=p.amount,
-                district_id=p.district_id,
-                district_name=p.district_name or DISTRICT_NAMES.get(p.district_id, f"Huyện {p.district_id}"),
                 location=p.location,
+                address=p.address,
                 reason="Vượt quá sức chứa hoặc không thể phục vụ kịp khung giờ cam kết"
             ))
 

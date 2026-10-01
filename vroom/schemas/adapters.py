@@ -25,7 +25,7 @@ def build_vroom_job(p: PassengerSchema, default_tw_start: str = "13:00", default
 
     job_obj = {
         "id": p.id,
-        "description": f"[{'Trả' if is_del else 'Đón'}] {p.name} ({p.district_name or ''})",
+        "description": f"[{'Trả' if is_del else 'Đón'}] {p.name}",
         "location": p.location,
         "service": p.service_duration_min * 60,
         "priority": 100,
