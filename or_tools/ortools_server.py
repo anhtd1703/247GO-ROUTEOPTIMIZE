@@ -283,6 +283,25 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
     transit_dist_callback_idx = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_dist_callback_idx)
 
+    # ── DISTANCE DIMENSION: Hybrid Hard + Soft KM Limit ────────────────────────────────────────
+    # Hard ceiling: xe tuyệt đối không vượt max_distance_km_hard
+    # Soft penalty: phạt điểm nếu vượt max_distance_km_soft nhưng không block lời giải
+    vehicle_max_distances_hard = []
+    for v in req.vehicles:
+        if v.max_distance_km_hard is not None:
+            vehicle_max_distances_hard.append(int(v.max_distance_km_hard * 1000))
+        else:
+            vehicle_max_distances_hard.append(10_000_000)  # ~10,000 km = không giới hạn
+
+    routing.AddDimensionWithVehicleCapacity(
+        transit_dist_callback_idx,
+        0,                               # slack = 0
+        vehicle_max_distances_hard,      # hard ceiling per-vehicle (mét)
+        True,                            # start cumul = 0
+        'Distance'
+    )
+    distance_dimension = routing.GetDimensionOrDie('Distance')
+
     # 4. TỐI ƯU HÓA ĐỘI XE THÔNG MINH (DYNAMIC FLEET RIGHT-SIZING FIXED COSTS)
     # Tự động điều chỉnh chi phí mở xe theo tổng dung lượng khách để chọn loại xe thông minh nhất.
     # Ưu tiên số 1: Phục vụ 100% khách. Khi đông khách, chi phí mở xe giảm về ~0 để solver tự do bung hết xe đón khách.
@@ -373,6 +392,21 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
 
     # 3. Phạt kéo dài tổng thời gian toàn bộ hành trình của xe (Global Span Cost)
     # time_dimension.SetSpanCostCoefficientForAllVehicles(1)
+
+    # ── SOFT DISTANCE PENALTY (per-vehicle) ────────────────────────────────────────────────────
+    # Phạt điểm tại End node nếu xe chạy vượt ngưỡng max_distance_km_soft
+    dist_penalty_per_meter = 1
+    if req.config and req.config.distance_penalty_weight is not None:
+        dist_penalty_per_meter = max(1, int(req.config.distance_penalty_weight))
+
+    for v_idx, v in enumerate(req.vehicles):
+        if v.max_distance_km_soft is not None:
+            soft_limit_m = int(v.max_distance_km_soft * 1000)
+            distance_dimension.SetCumulVarSoftUpperBound(
+                routing.End(v_idx),
+                soft_limit_m,
+                dist_penalty_per_meter
+            )
 
     # 6. CHIỀU TẢI TRỌNG (CAPACITY DIMENSION) CHO DELIVERY & PICKUP
     vehicle_capacities = [v.capacity for v in req.vehicles]
@@ -671,6 +705,7 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
             delivery_passengers=used_del,
             pickup_passengers=used_pick,
             total_distance_meters=r_dist,
+            total_distance_km=round(r_dist / 1000.0, 2),
             total_duration_seconds=r_dur,
             total_duration_minutes=round(r_dur / 60.0, 1),
             is_on_time=True,
@@ -710,6 +745,19 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
         all_routes_on_time=True
     )
 
+    # ── WARNINGS: Vượt ngưỡng km soft ────────────────────────────────────────────────────────────
+    # Build map vehicle_id -> VehicleSchema để tra cứu chính xác (routes_res chỉ chứa xe hoạt động)
+    vehicle_map = {v.id: v for v in req.vehicles}
+    warnings_list: List[str] = []
+    for route in routes_res:
+        v_obj_w = vehicle_map.get(route.vehicle_id)
+        if v_obj_w and v_obj_w.max_distance_km_soft is not None:
+            if route.total_distance_km > v_obj_w.max_distance_km_soft:
+                warnings_list.append(
+                    f"⚠️ Xe {route.vehicle_name}: {route.total_distance_km} km "
+                    f"vượt ngưỡng khuyến cáo {v_obj_w.max_distance_km_soft} km"
+                )
+
     return UnifiedOptimizationResponse(
         code=0,
         status="success" if not unassigned_res else "partial",
@@ -718,7 +766,7 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
         summary=summary,
         routes=routes_res,
         unassigned=unassigned_res,
-        warnings=[]
+        warnings=warnings_list
     )
 
 # --------------------------------------------------------------------------------------------------

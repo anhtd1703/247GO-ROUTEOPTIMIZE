@@ -402,6 +402,9 @@ async def _solve_two_phase_subproblem(
                 "costs": {"fixed": get_vehicle_fixed_cost(v.capacity)},
                 "time_window": [v_start_sec, veh_p1_end_limit]
             }
+            if v.max_distance_km_hard:
+                v_obj["max_distance"] = v.max_distance_km_hard * 1000
+
             if not has_pickups or not strict_precedence:
                 v_obj["end"] = v.end_location or hub_coords
             p1_vehicles.append(v_obj)
@@ -466,7 +469,7 @@ async def _solve_two_phase_subproblem(
                 p2_start_sec = p1_info["finish_time"]
                 p2_start_loc = p1_info["location"]
                 target_p2_end = max(v_end_sec, p2_start_sec + 3600)
-                p2_vehicles.append({
+                v2_obj = {
                     "id": v.id,
                     "description": v.name,
                     "profile": "car",
@@ -475,12 +478,15 @@ async def _solve_two_phase_subproblem(
                     "capacity": [v.capacity],
                     "costs": {"fixed": 0},
                     "time_window": [p2_start_sec, target_p2_end]
-                })
+                }
+                if v.max_distance_km_hard:
+                    v2_obj["max_distance"] = v.max_distance_km_hard * 1000
+                p2_vehicles.append(v2_obj)
             else:
                 v_start = v.start_location or hub_coords
                 v_start_sec = time_to_sec(v.start_time) if v.start_time else p1_start_sec
                 target_p2_end = max(v_end_sec, v_start_sec + 3600)
-                p2_vehicles.append({
+                v2_obj = {
                     "id": v.id,
                     "description": v.name,
                     "profile": "car",
@@ -489,7 +495,10 @@ async def _solve_two_phase_subproblem(
                     "capacity": [v.capacity],
                     "costs": {"fixed": get_vehicle_fixed_cost(v.capacity)},
                     "time_window": [v_start_sec, target_p2_end]
-                })
+                }
+                if v.max_distance_km_hard:
+                    v2_obj["max_distance"] = v.max_distance_km_hard * 1000
+                p2_vehicles.append(v2_obj)
 
         p2_jobs = []
         for p in pickup_pax:

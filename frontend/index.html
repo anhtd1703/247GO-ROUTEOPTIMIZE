@@ -948,6 +948,20 @@
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
                         ⏰ Ca hoạt động: <strong>03:00 → 23:59</strong> (Toàn ngày)
                     </div>
+                    <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+                        <span
+                            style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #fffbeb; border: 1px solid #fde68a; color: #d97706;">
+                            🎯 OR-Tools: Soft ≤ 70 km
+                        </span>
+                        <span
+                            style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626;">
+                            🚧 OR-Tools: Hard ≤ 90 km / xe
+                        </span>
+                        <span
+                            style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; color: #059669;">
+                            ⚡ VROOM: Hard ≤ 45 km / pha
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Run Benchmark Button -->
@@ -1304,7 +1318,7 @@
         }
 
         // Sinh đội xe với cùng start_time và end_time áp dụng cho tất cả các xe
-        function buildOptimizationRequest() {
+        function buildBasePayload() {
             const colors = [
                 '#0284c7', '#059669', '#d97706', '#dc2626', '#0891b2',
                 '#2563eb', '#16a34a', '#ca8a04', '#e11d48', '#4b5563'
@@ -1313,7 +1327,7 @@
             // Xác định thời gian xuất phát (start_time) và kết thúc (end_time) của ca xe
             const deliveryPax = currentPassengers.find(p => p.type === 'delivery');
             let startTime, endTime;
-            
+
             if (deliveryPax) {
                 // Ca có khách Trả (có thể kết hợp Đón) -> lấy giờ khách Trả làm mốc (đợi xe lớn HN về)
                 const refTrip = deliveryPax.trip_time;
@@ -1323,14 +1337,14 @@
                 // Ca CHỈ CÓ KHÁCH ĐÓN -> Xe phải xuất phát trước giờ xe lớn chạy đi HN
                 const pickupTripTimes = currentPassengers.map(p => p.trip_time).sort();
                 const refTrip = pickupTripTimes.length > 0 ? pickupTripTimes[0] : '07:00';
-                
+
                 // Xuất phát trước 2 tiếng (-120 phút) để có đủ thời gian đi đón khách
                 startTime = addMinutesToTime(refTrip, -120);
                 endTime = addMinutesToTime(refTrip, 60); // Kết thúc ca sau khi về bến
             }
 
             // Đội xe mặc định cho 1 lần điều xe (10 xe: 2 xe 16c, 8 xe 7c)
-            const fleetCapacities = [16, 16, 7, 7, 7, 7, 7, 7, 7, 7];
+            const fleetCapacities = [15, 15, 15, 11, 11, 7, 7, 7, 7, 7];
             const vehicles = fleetCapacities.map((cap, idx) => {
                 const vId = idx + 1;
                 return {
@@ -1366,6 +1380,45 @@
             };
         }
 
+        // KM Limit mặc định cho OR-Tools: Soft 70km, Hard 90km
+        const ORTOOLS_KM_SOFT = 70;
+        const ORTOOLS_KM_HARD = 90;
+
+        // KM Limit cho VROOM (theo từng pha)
+        const VROOM_KM_HARD = 45;
+
+        // Tạo payload riêng cho OR-Tools: inject km limits vào từng vehicle + distance_penalty_weight
+        function buildOrtoolsPayload(basePayload) {
+            return {
+                ...basePayload,
+                config: {
+                    ...basePayload.config,
+                    distance_penalty_weight: 3.0
+                },
+                vehicles: basePayload.vehicles.map(v => ({
+                    ...v,
+                    max_distance_km_soft: ORTOOLS_KM_SOFT,
+                    max_distance_km_hard: ORTOOLS_KM_HARD
+                }))
+            };
+        }
+
+        // Tạo payload riêng cho VROOM
+        function buildVroomPayload(basePayload) {
+            return {
+                ...basePayload,
+                vehicles: basePayload.vehicles.map(v => ({
+                    ...v,
+                    max_distance_km_hard: VROOM_KM_HARD
+                }))
+            };
+        }
+
+        // Legacy alias để không break code cũ
+        function buildOptimizationRequest() {
+            return buildBasePayload();
+        }
+
         // Chạy song song Benchmark cả 3 Engine
         async function runAllBenchmark() {
             if (currentPassengers.length === 0) return;
@@ -1373,11 +1426,18 @@
             const overlay = document.getElementById('loading-overlay');
             overlay.classList.add('active');
 
-            const payload = buildOptimizationRequest();
+            const basePayload = buildBasePayload();
+            const ortoolsPayload = buildOrtoolsPayload(basePayload);
+            const vroomPayload = buildVroomPayload(basePayload);
             engineResults = {};
 
             const callEngine = async (key) => {
                 const eng = ENGINES[key];
+                // Phân bổ payload tương ứng
+                let payload = basePayload;
+                if (key === 'OR-Tools') payload = ortoolsPayload;
+                else if (key === 'VROOM') payload = vroomPayload;
+
                 const t0 = performance.now();
                 try {
                     const res = await fetch(eng.url, {

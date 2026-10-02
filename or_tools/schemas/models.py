@@ -18,6 +18,7 @@ class SolverConfig(BaseModel):
     detour_factor: Optional[float] = Field(default=1.35, description="Hệ số uốn lượn đường bộ khi fallback Haversine")
     avg_speed_kmh: Optional[float] = Field(default=38.0, description="Vận tốc trung bình (km/h) khi fallback")
     ride_time_penalty_weight: Optional[float] = Field(default=2.0, description="Hệ số điểm phạt thời gian khách ngồi trên xe (Soft Ride Time Penalty)")
+    distance_penalty_weight: Optional[float] = Field(default=1.0, description="Hệ số điểm phạt mỗi mét xe chạy vượt ngưỡng max_distance_km_soft (Soft Distance Penalty)")
 
 
 class HubSchema(BaseModel):
@@ -62,10 +63,28 @@ class VehicleSchema(BaseModel):
     end_location: Optional[List[float]] = Field(default=None, description="[lng, lat] điểm kết thúc của xe (None = về Hub)")
     start_location_name: Optional[str] = None
     end_location_name: Optional[str] = None
+    max_distance_km_soft: Optional[float] = Field(
+        default=None,
+        description="Ngưỡng km khuyến cáo (Soft). OR-Tools phạt điểm nếu vượt nhưng không block. VD: 80.0"
+    )
+    max_distance_km_hard: Optional[float] = Field(
+        default=None,
+        description="Ngưỡng km tuyệt đối (Hard). Xe không bao giờ được vượt ngưỡng này. VD: 120.0"
+    )
 
     # Hỗ trợ alias lạc hậu (backward compatibility)
     startTime: Optional[str] = None
     endTime: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_distance_limits(self) -> "VehicleSchema":
+        soft = self.max_distance_km_soft
+        hard = self.max_distance_km_hard
+        if soft is not None and hard is not None and soft > hard:
+            raise ValueError(
+                f"max_distance_km_soft ({soft} km) phải ≤ max_distance_km_hard ({hard} km)"
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -204,6 +223,7 @@ class RouteSchema(BaseModel):
     delivery_passengers: int = 0
     pickup_passengers: int = 0
     total_distance_meters: int = 0
+    total_distance_km: float = Field(default=0.0, description="Tổng quãng đường xe chạy (km)")
     total_duration_seconds: int = 0
     total_duration_minutes: float = 0.0
     is_on_time: bool = True

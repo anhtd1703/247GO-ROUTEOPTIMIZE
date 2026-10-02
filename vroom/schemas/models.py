@@ -62,6 +62,8 @@ class VehicleSchema(BaseModel):
     end_location: Optional[List[float]] = Field(default=None, description="[lng, lat] điểm kết thúc của xe (None = về Hub)")
     start_location_name: Optional[str] = None
     end_location_name: Optional[str] = None
+    max_distance_km_soft: Optional[int] = Field(default=None, description="Ngưỡng quãng đường phạt mềm (km)")
+    max_distance_km_hard: Optional[int] = Field(default=None, description="Ngưỡng quãng đường giới hạn cứng (km)")
 
     # Hỗ trợ alias lạc hậu (backward compatibility)
     startTime: Optional[str] = None
