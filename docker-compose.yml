@@ -32,6 +32,7 @@ services:
       - ./vroom:/app
     ports:
       - "8006:8006"
+    command: uvicorn main:app --host 0.0.0.0 --port 8006 --reload
     environment:
       - OSRM_URL=http://osrm:5000
       - VROOM_URL=http://vroom:3000

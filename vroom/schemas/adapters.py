@@ -14,7 +14,7 @@ def get_vehicle_fixed_cost(capacity: int) -> int:
         return 50000
     return 20000
 
-def build_vroom_job(p: PassengerSchema, default_tw_start: str = "13:00", default_tw_end: str = "15:00") -> Dict[str, Any]:
+def build_vroom_job(p: PassengerSchema, default_tw_start: str = "00:00", default_tw_end: str = "23:59") -> Dict[str, Any]:
     """Chuyển đổi một đối tượng PassengerSchema sang VROOM Job format"""
     is_del = p.type == "delivery"
     tw_s = p.tw_start or default_tw_start
@@ -22,6 +22,8 @@ def build_vroom_job(p: PassengerSchema, default_tw_start: str = "13:00", default
     
     tw_s_sec = time_to_sec(tw_s)
     tw_e_sec = time_to_sec(tw_e)
+    if tw_s_sec > tw_e_sec:
+        tw_s_sec, tw_e_sec = tw_e_sec, tw_s_sec
 
     job_obj = {
         "id": p.id,

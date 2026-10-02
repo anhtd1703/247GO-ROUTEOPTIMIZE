@@ -1310,13 +1310,24 @@
                 '#2563eb', '#16a34a', '#ca8a04', '#e11d48', '#4b5563'
             ];
 
-            // Tìm trip_time đại diện của đợt điều xe (ưu tiên từ khách trả, nếu không lấy khách đầu tiên)
+            // Xác định thời gian xuất phát (start_time) và kết thúc (end_time) của ca xe
             const deliveryPax = currentPassengers.find(p => p.type === 'delivery');
-            const refTrip = deliveryPax ? deliveryPax.trip_time : (currentPassengers[0]?.trip_time || '07:00');
-
-            // Tính start_time (trip + 110m) và end_time (trip + 240m) áp dụng chung cho tất cả xe
-            const startTime = addMinutesToTime(refTrip, 110);
-            const endTime = addMinutesToTime(refTrip, 240);
+            let startTime, endTime;
+            
+            if (deliveryPax) {
+                // Ca có khách Trả (có thể kết hợp Đón) -> lấy giờ khách Trả làm mốc (đợi xe lớn HN về)
+                const refTrip = deliveryPax.trip_time;
+                startTime = addMinutesToTime(refTrip, 110);
+                endTime = addMinutesToTime(refTrip, 240);
+            } else {
+                // Ca CHỈ CÓ KHÁCH ĐÓN -> Xe phải xuất phát trước giờ xe lớn chạy đi HN
+                const pickupTripTimes = currentPassengers.map(p => p.trip_time).sort();
+                const refTrip = pickupTripTimes.length > 0 ? pickupTripTimes[0] : '07:00';
+                
+                // Xuất phát trước 2 tiếng (-120 phút) để có đủ thời gian đi đón khách
+                startTime = addMinutesToTime(refTrip, -120);
+                endTime = addMinutesToTime(refTrip, 60); // Kết thúc ca sau khi về bến
+            }
 
             // Đội xe mặc định cho 1 lần điều xe (10 xe: 2 xe 16c, 8 xe 7c)
             const fleetCapacities = [16, 16, 7, 7, 7, 7, 7, 7, 7, 7];

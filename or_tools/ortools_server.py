@@ -508,8 +508,8 @@ def optimize_dispatch(req: UnifiedOptimizationRequest) -> UnifiedOptimizationRes
                 name=p.name,
                 type=p.type,
                 amount=p.amount,
-                district_id=p.district_id,
-                district_name=p.district_name or DISTRICT_NAMES.get(p.district_id, f"Huyện {p.district_id}"),
+                district_id=getattr(p, 'district_id', 0),
+                district_name=getattr(p, 'district_name', None) or DISTRICT_NAMES.get(getattr(p, 'district_id', 0), f"Huyện {getattr(p, 'district_id', 0)}"),
                 location=p.location,
                 reason="Nhu cầu vượt quá tổng công suất ghế hoặc xung đột nghiêm trọng khung giờ ca chạy"
             )

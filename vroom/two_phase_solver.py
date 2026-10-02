@@ -331,9 +331,9 @@ async def _solve_two_phase_subproblem(
     passengers: List[PassengerSchema],
     hub_coords: List[float],
     hub_name: str,
-    p1_start_str: str = "13:00",
-    p1_end_str: str = "14:00",
-    p2_end_str: str = "15:00",
+    p1_start_str: Optional[str] = None,
+    p1_end_str: Optional[str] = None,
+    p2_end_str: Optional[str] = None,
     strict_precedence: bool = True,
     is_near_zone: bool = False,
     opt_mode_label: str = "mode2"
@@ -352,9 +352,27 @@ async def _solve_two_phase_subproblem(
     has_deliveries = len(delivery_pax) > 0
     has_pickups = len(pickup_pax) > 0
 
-    p1_start_sec = time_to_sec(p1_start_str)
-    p1_end_sec = time_to_sec(p1_end_str)
-    p2_end_sec = time_to_sec(p2_end_str)
+    fleet_start_secs = [time_to_sec(v.start_time) for v in fleet if v.start_time]
+    fleet_end_secs = [time_to_sec(v.end_time) for v in fleet if v.end_time]
+    min_fleet_start = min(fleet_start_secs) if fleet_start_secs else 24600
+    max_fleet_end = max(fleet_end_secs) if fleet_end_secs else (min_fleet_start + 7200)
+
+    p1_start_sec = time_to_sec(p1_start_str) if p1_start_str else min_fleet_start
+    p2_end_sec = time_to_sec(p2_end_str) if p2_end_str else max_fleet_end
+    if p2_end_sec <= p1_start_sec:
+        p2_end_sec = p1_start_sec + 7200
+
+    if p1_end_str:
+        p1_end_sec = time_to_sec(p1_end_str)
+    else:
+        if has_deliveries and has_pickups:
+            p1_end_sec = p1_start_sec + max(1800, int((p2_end_sec - p1_start_sec) * 0.55))
+        else:
+            p1_end_sec = p2_end_sec
+
+    p1_start_str = sec_to_time(p1_start_sec)
+    p1_end_str = sec_to_time(p1_end_sec)
+    p2_end_str = sec_to_time(p2_end_sec)
 
     phase1_routes = []
     phase1_unassigned = []
@@ -367,7 +385,14 @@ async def _solve_two_phase_subproblem(
         p1_vehicles = []
         for v in fleet:
             v_start = v.start_location or hub_coords
-            v_start_sec = time_to_sec(v.start_time or p1_start_str)
+            v_start_sec = time_to_sec(v.start_time) if v.start_time else p1_start_sec
+            v_end_sec = time_to_sec(v.end_time) if v.end_time else p2_end_sec
+            
+            # Thời hạn kết thúc pha 1 của xe
+            veh_p1_end_limit = min(v_end_sec, p1_end_sec) if has_pickups else v_end_sec
+            if veh_p1_end_limit <= v_start_sec:
+                veh_p1_end_limit = max(v_end_sec, v_start_sec + 3600)
+
             v_obj = {
                 "id": v.id,
                 "description": v.name,
@@ -375,7 +400,7 @@ async def _solve_two_phase_subproblem(
                 "start": v_start,
                 "capacity": [v.capacity],
                 "costs": {"fixed": get_vehicle_fixed_cost(v.capacity)},
-                "time_window": [v_start_sec, p1_end_sec]
+                "time_window": [v_start_sec, veh_p1_end_limit]
             }
             if not has_pickups or not strict_precedence:
                 v_obj["end"] = v.end_location or hub_coords
@@ -403,7 +428,7 @@ async def _solve_two_phase_subproblem(
                         end_coord=None,
                         dist_matrix=table_res["distances"],
                         dur_matrix=table_res["durations"],
-                        start_time_sec=time_to_sec(p1_start_str),
+                        start_time_sec=p1_start_sec,
                         phase_type="delivery",
                         central_hub=hub_coords,
                         candidate_next_coords=candidate_pickup_locs,
@@ -417,7 +442,7 @@ async def _solve_two_phase_subproblem(
             job_steps = [s for s in r.get("steps", []) if s.get("type") == "job"]
             if job_steps:
                 last_job = job_steps[-1]
-                finish_sec = last_job.get("arrival", time_to_sec(p1_start_str)) + last_job.get("service", 60)
+                finish_sec = last_job.get("arrival", p1_start_sec) + last_job.get("service", 60)
                 veh_p1_end_map[v_id] = {
                     "location": last_job.get("location", hub_coords),
                     "finish_time": finish_sec,
@@ -434,21 +459,27 @@ async def _solve_two_phase_subproblem(
         p2_vehicles = []
         for v in fleet:
             v_end = v.end_location or hub_coords
+            v_end_sec = time_to_sec(v.end_time) if v.end_time else p2_end_sec
+            
             if v.id in veh_p1_end_map:
                 p1_info = veh_p1_end_map[v.id]
+                p2_start_sec = p1_info["finish_time"]
+                p2_start_loc = p1_info["location"]
+                target_p2_end = max(v_end_sec, p2_start_sec + 3600)
                 p2_vehicles.append({
                     "id": v.id,
                     "description": v.name,
                     "profile": "car",
-                    "start": p1_info["location"],
+                    "start": p2_start_loc,
                     "end": v_end,
                     "capacity": [v.capacity],
                     "costs": {"fixed": 0},
-                    "time_window": [p1_info["finish_time"], p2_end_sec]
+                    "time_window": [p2_start_sec, target_p2_end]
                 })
             else:
                 v_start = v.start_location or hub_coords
-                v_start_sec = time_to_sec(v.start_time or p1_start_str)
+                v_start_sec = time_to_sec(v.start_time) if v.start_time else p1_start_sec
+                target_p2_end = max(v_end_sec, v_start_sec + 3600)
                 p2_vehicles.append({
                     "id": v.id,
                     "description": v.name,
@@ -457,10 +488,15 @@ async def _solve_two_phase_subproblem(
                     "end": v_end,
                     "capacity": [v.capacity],
                     "costs": {"fixed": get_vehicle_fixed_cost(v.capacity)},
-                    "time_window": [v_start_sec, p2_end_sec]
+                    "time_window": [v_start_sec, target_p2_end]
                 })
 
-        p2_jobs = [build_vroom_job(p, p1_start_str, p2_end_str) for p in pickup_pax]
+        p2_jobs = []
+        for p in pickup_pax:
+            p_trip_sec = time_to_sec(p.trip_time) if p.trip_time else p2_end_sec
+            job_tw_end_sec = max(p1_start_sec + 1800, min(p2_end_sec, p_trip_sec))
+            p2_jobs.append(build_vroom_job(p, p1_start_str, sec_to_time(job_tw_end_sec)))
+
         p2_payload = {"vehicles": p2_vehicles, "jobs": p2_jobs}
 
         p2_response = await call_vroom_backend(p2_payload)
@@ -476,7 +512,7 @@ async def _solve_two_phase_subproblem(
                 coords = [start_loc] + [s["location"] for s in job_steps] + [end_loc]
                 table_res = await fetch_osrm_table(coords)
                 if table_res and table_res.get("distances") and table_res.get("durations"):
-                    start_sec = veh_p1_end_map.get(r.get("vehicle"), {}).get("finish_time", time_to_sec(p1_start_str))
+                    start_sec = veh_p1_end_map.get(r.get("vehicle"), {}).get("finish_time", p1_start_sec)
                     opt_order = optimize_tour_sequence(
                         start_coord=start_loc,
                         job_steps=job_steps,
@@ -565,7 +601,7 @@ async def _solve_two_phase_subproblem(
             geometry = route_coords
 
         # Xây dựng các bước dừng (RouteStepSchema)
-        current_clock = time_to_sec(v_obj.start_time or p1_start_str)
+        current_clock = time_to_sec(v_obj.start_time) if v_obj.start_time else p1_start_sec
         cum_dist = 0
         cum_dur = 0
         current_load = r_info["delivery_count"]
@@ -718,9 +754,8 @@ async def _solve_two_phase_subproblem(
 async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptimizationResponse:
     """
     Điểm vào chính xử lý tối ưu hóa điều phối 2 pha:
-    - Mode 1: Phân tách Zone Gần (<15km, 1h SLA, đón chuyến 14h) & Zone Xa (>=15km, 2h SLA, đón chuyến 15h)
-              với đội xe hoàn toàn tách biệt.
-    - Mode 2: Toàn cục liên huyện 2h (13:00 -> 15:00) đón chuyến 15h.
+    - Mode 1: Phân tách Zone Gần (<15km) & Zone Xa (>=15km) với đội xe hoàn toàn tách biệt.
+    - Mode 2: Toàn cục liên huyện ca chạy linh hoạt theo đội xe.
     """
     start_time = time.time()
 
@@ -728,6 +763,19 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
     hub_name = req.hub.name or "Bến xe Thái Bình (QL10 Vũ Thư)"
     opt_mode = req.config.opt_mode if (req.config and req.config.opt_mode) else "mode2"
     strict_prec = req.config.strict_precedence if req.config else True
+
+    # Xác định ca chạy chung của đợt điều xe từ danh sách xe
+    fleet_start_secs = [time_to_sec(v.start_time) for v in req.vehicles if v.start_time]
+    fleet_end_secs = [time_to_sec(v.end_time) for v in req.vehicles if v.end_time]
+    min_v_start_sec = min(fleet_start_secs) if fleet_start_secs else 24600
+    max_v_end_sec = max(fleet_end_secs) if fleet_end_secs else (min_v_start_sec + 7200)
+    if max_v_end_sec <= min_v_start_sec:
+        max_v_end_sec = min_v_start_sec + 7200
+
+    min_v_start_str = sec_to_time(min_v_start_sec)
+    max_v_end_str = sec_to_time(max_v_end_sec)
+    mid_sec = min_v_start_sec + max(1800, int((max_v_end_sec - min_v_start_sec) * 0.55))
+    mid_str = sec_to_time(mid_sec)
 
     pax_map = {p.id: p for p in req.passengers}
     final_routes: List[RouteSchema] = []
@@ -737,15 +785,13 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
     total_system_service = 0
 
     if opt_mode == "mode1":
-        # CÁCH 1: Phân tách Zone Gần & Zone Xa, đội xe rời nhau
+        # CÁCH 1: Phân tách Zone Gần (<15km) & Zone Xa (>=15km), đội xe rời nhau
         def is_near_pax(p: PassengerSchema) -> bool:
+            if not p.location or len(p.location) < 2:
+                return True
             dist = haversine_distance(p.location[0], p.location[1], hub_coords[0], hub_coords[1])
-            # Gần: Đông Hưng (3), Kiến Xương (4), Vũ Thư (5), TP. Thái Bình (6) nếu < 15km
-            if p.district_id in (3, 4, 5):
-                return True
-            if p.district_id == 6 and dist < 15.0:
-                return True
-            return dist < 15.0
+            # haversine_distance returns meters, 15km = 15000m
+            return dist < 15000.0
 
         near_pax = [p for p in req.passengers if is_near_pax(p)]
         far_pax = [p for p in req.passengers if not is_near_pax(p)]
@@ -759,9 +805,9 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
                 passengers=far_pax,
                 hub_coords=hub_coords,
                 hub_name=hub_name,
-                p1_start_str="13:00",
-                p1_end_str="14:00",
-                p2_end_str="15:00",
+                p1_start_str=min_v_start_str,
+                p1_end_str=mid_str,
+                p2_end_str=max_v_end_str,
                 strict_precedence=strict_prec,
                 is_near_zone=False,
                 opt_mode_label="mode1"
@@ -778,16 +824,18 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
         if not available_for_near and near_pax:
             available_for_near = list(req.vehicles)
 
-        # 3. Tối ưu nhóm Gần (1h SLA: trả trước 13:40, đón về trước 14:00)
+        # 3. Tối ưu nhóm Gần
         if near_pax:
+            near_end_sec = min_v_start_sec + min(3600, max_v_end_sec - min_v_start_sec)
+            near_mid_sec = min_v_start_sec + int((near_end_sec - min_v_start_sec) * 0.55)
             n_routes, n_unassigned, n_dist, n_dur, n_svc = await _solve_two_phase_subproblem(
                 fleet=available_for_near,
                 passengers=near_pax,
                 hub_coords=hub_coords,
                 hub_name=hub_name,
-                p1_start_str="13:00",
-                p1_end_str="13:40",
-                p2_end_str="14:00",
+                p1_start_str=min_v_start_str,
+                p1_end_str=sec_to_time(near_mid_sec),
+                p2_end_str=sec_to_time(near_end_sec),
                 strict_precedence=strict_prec,
                 is_near_zone=True,
                 opt_mode_label="mode1"
@@ -799,15 +847,15 @@ async def solve_vroom_two_phase(req: UnifiedOptimizationRequest) -> UnifiedOptim
             total_system_service += n_svc
 
     else:
-        # CÁCH 2: Toàn Cục Liên Huyện Theo Hành Khách (Ca 2h, đón chuyến 15h)
+        # CÁCH 2: Toàn Cục Liên Huyện Theo Hành Khách (Ca linh hoạt theo đội xe)
         final_routes, raw_unassigned, total_system_dist, total_system_dur, total_system_service = await _solve_two_phase_subproblem(
             fleet=req.vehicles,
             passengers=req.passengers,
             hub_coords=hub_coords,
             hub_name=hub_name,
-            p1_start_str="13:00",
-            p1_end_str="14:00",
-            p2_end_str="15:00",
+            p1_start_str=min_v_start_str,
+            p1_end_str=mid_str,
+            p2_end_str=max_v_end_str,
             strict_precedence=strict_prec,
             is_near_zone=False,
             opt_mode_label="mode2"
